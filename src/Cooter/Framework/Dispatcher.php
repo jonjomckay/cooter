@@ -41,6 +41,11 @@ class Dispatcher
         $controller = $this->container->get($route->getController());
         $method = $route->getFunction();
 
-        return $controller->$method($request);
+        $response = $controller->$method($request);
+        if ($response instanceof ResponseInterface) {
+            return $response;
+        }
+
+        throw new RuntimeException('The response from ' . $route->getController() . '::' . $route->getFunction() . ' does not implement Psr\Http\Message\ResponseInterface');
     }
 }
