@@ -1,5 +1,6 @@
 {
   "name": "cooter/framework",
+  "license": "MIT",
   "autoload": {
     "psr-0": { "Cooter\\": "src/" }
   },
