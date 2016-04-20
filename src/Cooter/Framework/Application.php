@@ -1,15 +1,14 @@
 <?php
 namespace Cooter\Framework;
 
-use Cooter\Framework\Middleware\DispatcherMiddleware;
-use Cooter\Framework\Middleware\ErrorMiddleware;
-use Cooter\Framework\Router\RouteCollection;
+use Cooter\Framework\Router\Route;
+use Franzl\Middleware\Whoops\WhoopsRunner;
 use League\Container\Container;
 use League\Container\ReflectionContainer;
+use League\Route\RouteCollection;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Response\SapiEmitter;
 use Zend\Diactoros\ServerRequestFactory;
-use Zend\Stratigility\MiddlewarePipe;
 
 class Application
 {
@@ -20,14 +19,14 @@ class Application
     private $container;
 
     /**
-     * @var RouteCollection
+     * @var Route[]
      */
-    private $routes;
+    private $routes = [];
 
     /**
-     * @var MiddlewarePipe
+     * @var callable[]
      */
-    private $middleware;
+    private $middleware = [];
 
     /**
      * Application constructor.
@@ -35,18 +34,16 @@ class Application
     public function __construct()
     {
         $this->container = new Container();
-        $this->middleware = new MiddlewarePipe();
-        $this->routes = new RouteCollection();
     }
 
-    public function addMiddleware($path, $middleware = null)
+    public function addMiddleware(callable $middleware)
     {
-        $this->middleware->pipe($path, $middleware);
+        $this->middleware[] = $middleware;
     }
 
     public function addRoute($url, $method = 'GET', $controller, $function)
     {
-        $this->routes->addRoute($url, $method, $controller, $function);
+        $this->routes[$method . $url] = new Route($url, $method, $controller, $function);
     }
 
     /**
@@ -60,18 +57,27 @@ class Application
     public function start()
     {
         $this->container->delegate(new ReflectionContainer());
+        $this->container->share('response', Response::class);
+        $this->container->share('request', function () {
+            return ServerRequestFactory::fromGlobals($_SERVER, $_GET, $_POST, $_COOKIE, $_FILES);
+        });
 
-        $dispatcher = new Dispatcher($this->container, $this->routes);
+        $routes = new RouteCollection($this->container);
+        foreach ($this->routes as $route) {
+            $routes->map($route->getMethod(), $route->getUrl(), [$route->getController(), $route->getFunction()]);
+        }
 
-        $this->middleware->pipe(new DispatcherMiddleware($dispatcher));
-        $this->middleware->pipe(new ErrorMiddleware());
+        foreach ($this->middleware as $middleware) {
+            $routes->middleware($middleware);
+        }
 
-        $request = ServerRequestFactory::fromGlobals();
+        try {
+            $response = $routes->dispatch($this->container->get('request'), $this->container->get('response'));
 
-        $middleware = $this->middleware;
-        $response = $middleware($request, new Response());
-
-        $emitter = new SapiEmitter();
-        $emitter->emit($response);
+            $emitter = new SapiEmitter();
+            $emitter->emit($response);
+        } catch (\Exception $exception) {
+            WhoopsRunner::handle($exception);
+        }
     }
 }
