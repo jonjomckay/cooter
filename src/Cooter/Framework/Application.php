@@ -1,64 +1,53 @@
 <?php
 namespace Cooter\Framework;
 
-use Cooter\Framework\Router\Route;
 use Franzl\Middleware\Whoops\WhoopsRunner;
 use League\Container\Container;
+use League\Container\ContainerAwareTrait;
 use League\Container\ReflectionContainer;
+use League\Event\EmitterTrait;
 use League\Route\RouteCollection;
-use League\Route\Strategy\StrategyInterface;
+use Zend\Diactoros\Request;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Response\SapiEmitter;
 use Zend\Diactoros\ServerRequestFactory;
 
 class Application
 {
-
-    /**
-     * @var Container
-     */
-    private $container;
+    use ContainerAwareTrait;
+    use EmitterTrait;
 
     /**
      * @var RouteCollection
      */
-    private $routes;
+    protected $router;
 
-    /**
-     * @var callable[]
-     */
-    private $middleware = [];
-
-    /**
-     * Application constructor.
-     */
-    public function __construct()
-    {
-        $this->container = new Container();
-        $this->routes = new RouteCollection($this->container);
-    }
-
-    public function addMiddleware(callable $middleware)
-    {
-        $this->middleware[] = $middleware;
-    }
-
-    public function addRoute($url, $method = 'GET', $controller, $function)
-    {
-        $this->routes->map($method, $url, [$controller, $function]);
-    }
-
-    public function setStrategy(StrategyInterface $strategy)
-    {
-        $this->routes->setStrategy($strategy);
-    }
-
-    /**
-     * @return Container
-     */
     public function getContainer()
     {
+        if (!isset($this->container)) {
+            $this->setContainer(new Container());
+        }
+        
         return $this->container;
+    }
+
+    public function getRouter()
+    {
+        if (!isset($this->router)) {
+            $this->router = new RouteCollection($this->getContainer());
+        }
+
+        return $this->router;
+    }
+
+    public function getEventEmitter()
+    {
+        return $this->getEmitter();
+    }
+
+    public function addRoute($path, $method, $controller, $action)
+    {
+        $this->getRouter()->addRoute($method, $path, [$controller, $action]);
     }
 
     public function start()
@@ -69,12 +58,15 @@ class Application
             return ServerRequestFactory::fromGlobals($_SERVER, $_GET, $_POST, $_COOKIE, $_FILES);
         });
 
-        foreach ($this->middleware as $middleware) {
-            $this->routes->middleware($middleware);
-        }
+        $request = $this->container->get('request');
+        $response = $this->container->get('response');
 
         try {
-            $response = $this->routes->dispatch($this->container->get('request'), $this->container->get('response'));
+            $this->emit('request.received', $request);
+
+            $response = $this->router->dispatch($request, $response);
+
+            $this->emit('response.created', $request, $response);
 
             $emitter = new SapiEmitter();
             $emitter->emit($response);
