@@ -8,6 +8,6 @@
     "franzl/whoops-middleware": "^0.3.1",
     "league/container": "^2.2",
     "league/event": "^2.1",
-    "league/route": "^2.0"
+    "league/route": "dev-master"
   }
 }
