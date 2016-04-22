@@ -70,8 +70,8 @@ class Application
 
             $emitter = new SapiEmitter();
             $emitter->emit($response);
-        } catch (\Exception $exception) {
-            WhoopsRunner::handle($exception);
+        } catch (\Throwable $throwable) {
+            WhoopsRunner::handle($throwable);
         }
     }
 }
