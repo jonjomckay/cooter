@@ -47,7 +47,7 @@ class Application
 
     public function addRoute($path, $method, $controller, $action)
     {
-        $this->getRouter()->addRoute($method, $path, [$controller, $action]);
+        $this->getRouter()->map($method, $path, [$controller, $action]);
     }
 
     public function start()
