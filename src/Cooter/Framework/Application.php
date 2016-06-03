@@ -68,10 +68,11 @@ class Application
 
             $this->emit('response.created', $request, $response);
 
-            $emitter = new SapiEmitter();
             $emitter->emit($response);
         } catch (\Throwable $throwable) {
-            WhoopsRunner::handle($throwable);
+            $errorResponse = WhoopsRunner::handle($throwable, $request);
+
+            $emitter->emit($errorResponse);
         }
     }
 }
