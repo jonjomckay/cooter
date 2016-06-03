@@ -72,7 +72,8 @@ class Application
 
             $emitter->emit($response);
         } catch (\Throwable $throwable) {
-            $errorResponse = WhoopsRunner::handle($throwable, $request);
+            $errorResponse = WhoopsRunner::handle($throwable, $request)
+                ->withHeader('Content-Type', 'application/json');
 
             $emitter->emit($errorResponse);
         }
