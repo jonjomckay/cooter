@@ -61,6 +61,8 @@ class Application
         $request = $this->container->get('request');
         $response = $this->container->get('response');
 
+        $emitter = new SapiEmitter();
+
         try {
             $this->emit('request.received', $request);
 
