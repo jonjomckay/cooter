@@ -1,13 +1,14 @@
 <?php
 namespace Cooter\Framework;
 
+use Franzl\Middleware\Whoops\FormatNegotiator;
 use Franzl\Middleware\Whoops\WhoopsRunner;
 use League\Container\Container;
 use League\Container\ContainerAwareTrait;
 use League\Container\ReflectionContainer;
 use League\Event\EmitterTrait;
 use League\Route\RouteCollection;
-use Zend\Diactoros\Request;
+use Psr\Http\Message\ServerRequestInterface;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Response\SapiEmitter;
 use Zend\Diactoros\ServerRequestFactory;
@@ -58,7 +59,9 @@ class Application
             return ServerRequestFactory::fromGlobals($_SERVER, $_GET, $_POST, $_COOKIE, $_FILES);
         });
 
+        /** @var ServerRequestInterface $request */
         $request = $this->container->get('request');
+
         $response = $this->container->get('response');
 
         $emitter = new SapiEmitter();
@@ -72,8 +75,20 @@ class Application
 
             $emitter->emit($response);
         } catch (\Throwable $throwable) {
-            $errorResponse = WhoopsRunner::handle($throwable, $request)
-                ->withHeader('Content-Type', 'application/json');
+            $format = FormatNegotiator::getPreferredFormat($request);
+
+            switch ($format) {
+                case 'json':
+                    $errorResponse = new Response\JsonResponse([
+                        'error' => $throwable->getMessage()
+                    ]);
+
+                    $errorResponse = $errorResponse->withHeader('Content-Type', 'application/json');
+                    break;
+                default:
+                    $errorResponse = WhoopsRunner::handle($throwable, $request);
+                    break;
+            }
 
             $emitter->emit($errorResponse);
         }
