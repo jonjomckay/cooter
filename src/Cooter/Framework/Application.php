@@ -7,7 +7,9 @@ use League\Container\Container;
 use League\Container\ContainerAwareTrait;
 use League\Container\ReflectionContainer;
 use League\Event\EmitterTrait;
+use League\Route\Http\Exception as HttpException;
 use League\Route\RouteCollection;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Response\SapiEmitter;
@@ -62,6 +64,7 @@ class Application
         /** @var ServerRequestInterface $request */
         $request = $this->container->get('request');
 
+        /** @var ResponseInterface $response */
         $response = $this->container->get('response');
 
         $emitter = new SapiEmitter();
@@ -88,6 +91,10 @@ class Application
                 default:
                     $errorResponse = WhoopsRunner::handle($throwable, $request);
                     break;
+            }
+
+            if ($throwable instanceof HttpException) {
+                $errorResponse = $errorResponse->withStatus($throwable->getStatusCode());
             }
 
             $emitter->emit($errorResponse);
