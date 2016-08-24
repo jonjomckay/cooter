@@ -26,12 +26,16 @@ class Application
      */
     protected $router;
 
+    protected $beforeMiddleware = [];
+
+    protected $afterMiddleware = [];
+
     public function getContainer()
     {
         if (!isset($this->container)) {
             $this->setContainer(new Container());
         }
-        
+
         return $this->container;
     }
 
@@ -47,6 +51,16 @@ class Application
     public function getEventEmitter()
     {
         return $this->getEmitter();
+    }
+
+    public function addBeforeMiddleware(callable $middleware)
+    {
+        $this->beforeMiddleware[] = $middleware;
+    }
+
+    public function addAfterMiddleware(callable $middleware)
+    {
+        $this->afterMiddleware[] = $middleware;
     }
 
     public function addRoute($path, $method, $controller, $action)
@@ -70,40 +84,55 @@ class Application
 
         $emitter = new SapiEmitter();
 
-        try {
-            $app = new MiddlewarePipe();
-            $app->pipe('/', function (ServerRequestInterface $request, ResponseInterface $response, callable $next) {
+        $middleware = new MiddlewarePipe();
+
+        foreach ($this->beforeMiddleware as $beforeMiddleware) {
+            $middleware->pipe('/', $beforeMiddleware);
+        }
+
+        $middleware->pipe('/', function (ServerRequestInterface $request, ResponseInterface $response, callable $next) {
+            try {
                 $this->emit('request.received', $request);
 
                 $response = $this->router->dispatch($request, $response);
 
                 $this->emit('response.created', $request, $response);
 
-                return $response;
-            });
+                return $next($request, $response);
+            } catch (\Throwable $t) {
+                return $next($request, $response, $t);
+            }
+        });
 
-            $emitter->emit($response);
-        } catch (\Throwable $throwable) {
+        foreach ($this->afterMiddleware as $afterMiddleware) {
+            $middleware->pipe('/', $afterMiddleware);
+        }
+
+        $middleware->pipe('/', function (\Throwable $throwable, ServerRequestInterface $request, ResponseInterface $response, callable $next) {
             $format = FormatNegotiator::getPreferredFormat($request);
 
             switch ($format) {
                 case 'json':
-                    $errorResponse = new Response\JsonResponse([
+                    $response = new Response\JsonResponse([
                         'error' => $throwable->getMessage()
                     ]);
 
-                    $errorResponse = $errorResponse->withHeader('Content-Type', 'application/json');
+                    $response = $response->withHeader('Content-Type', 'application/json');
                     break;
                 default:
-                    $errorResponse = WhoopsRunner::handle($throwable, $request);
+                    $response = WhoopsRunner::handle($throwable, $request);
                     break;
             }
 
             if ($throwable instanceof HttpException) {
-                $errorResponse = $errorResponse->withStatus($throwable->getStatusCode());
+                $response = $response->withStatus($throwable->getStatusCode());
             }
 
-            $emitter->emit($errorResponse);
-        }
+            return $next($request, $response);
+        });
+
+        $result = $middleware($request, $response);
+
+        $emitter->emit($result);
     }
 }
