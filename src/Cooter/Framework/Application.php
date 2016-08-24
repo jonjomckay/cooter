@@ -14,6 +14,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Response\SapiEmitter;
 use Zend\Diactoros\ServerRequestFactory;
+use Zend\Stratigility\MiddlewarePipe;
 
 class Application
 {
@@ -70,11 +71,16 @@ class Application
         $emitter = new SapiEmitter();
 
         try {
-            $this->emit('request.received', $request);
+            $app = new MiddlewarePipe();
+            $app->pipe('/', function (ServerRequestInterface $request, ResponseInterface $response, callable $next) {
+                $this->emit('request.received', $request);
 
-            $response = $this->router->dispatch($request, $response);
+                $response = $this->router->dispatch($request, $response);
 
-            $this->emit('response.created', $request, $response);
+                $this->emit('response.created', $request, $response);
+
+                return $response;
+            });
 
             $emitter->emit($response);
         } catch (\Throwable $throwable) {

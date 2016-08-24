@@ -8,6 +8,7 @@
     "franzl/whoops-middleware": "^0.4.1",
     "league/container": "^2.2",
     "league/event": "^2.1",
-    "league/route": "^2.0"
+    "league/route": "^2.0",
+    "zendframework/zend-stratigility": "^1.2"
   }
 }
