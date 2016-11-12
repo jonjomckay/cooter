@@ -14,7 +14,9 @@ use Psr\Http\Message\ServerRequestInterface;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Response\SapiEmitter;
 use Zend\Diactoros\ServerRequestFactory;
+use Zend\Stratigility\Middleware\ErrorHandler;
 use Zend\Stratigility\MiddlewarePipe;
+use Zend\Stratigility\NoopFinalHandler;
 
 class Application
 {
@@ -85,35 +87,14 @@ class Application
         $emitter = new SapiEmitter();
 
         $middleware = new MiddlewarePipe();
+        $middleware->raiseThrowables();
 
-        foreach ($this->beforeMiddleware as $beforeMiddleware) {
-            $middleware->pipe('/', $beforeMiddleware);
-        }
-
-        $middleware->pipe('/', function (ServerRequestInterface $request, ResponseInterface $response, callable $next) {
-            try {
-                $this->emit('request.received', $request);
-
-                $response = $this->router->dispatch($request, $response);
-
-                $this->emit('response.created', $request, $response);
-
-                return $next($request, $response);
-            } catch (\Throwable $t) {
-                return $next($request, $response, $t);
-            }
-        });
-
-        foreach ($this->afterMiddleware as $afterMiddleware) {
-            $middleware->pipe('/', $afterMiddleware);
-        }
-
-        $middleware->pipe('/', function (\Throwable $throwable, ServerRequestInterface $request, ResponseInterface $response, callable $next) {
+        $middleware->pipe(new ErrorHandler(new Response(), function (\Throwable $throwable, ServerRequestInterface $request, ResponseInterface $response) {
             $format = FormatNegotiator::getPreferredFormat($request);
 
             switch ($format) {
                 case 'json':
-                    $response = new Response\JsonResponse([
+                    $response =  new Response\JsonResponse([
                         'error' => $throwable->getMessage()
                     ]);
 
@@ -128,10 +109,28 @@ class Application
                 $response = $response->withStatus($throwable->getStatusCode());
             }
 
+            return $response;
+        }));
+
+        foreach ($this->beforeMiddleware as $beforeMiddleware) {
+            $middleware->pipe('/', $beforeMiddleware);
+        }
+
+        $middleware->pipe('/', function (ServerRequestInterface $request, ResponseInterface $response, callable $next) {
+            $this->emit('request.received', $request);
+
+            $response = $this->router->dispatch($request, $response);
+
+            $this->emit('response.created', $request, $response);
+
             return $next($request, $response);
         });
 
-        $result = $middleware($request, $response);
+        foreach ($this->afterMiddleware as $afterMiddleware) {
+            $middleware->pipe('/', $afterMiddleware);
+        }
+
+        $result = $middleware($request, $response, new NoopFinalHandler());
 
         $emitter->emit($result);
     }
